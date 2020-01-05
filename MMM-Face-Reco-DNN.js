@@ -50,9 +50,34 @@ Module.register('MMM-Face-Reco-DNN', {
   timouts: {},
   users: [],
 
+  getStyles: function() {
+    return ['styles.css'];
+  },
+
   start: function() {
     this.sendSocketNotification('CONFIG', this.config);
     Log.log('Starting module: ' + this.name);
+  },
+
+  getDom: function() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'MMM-Face-Reco-DNN';
+    let currentBlock = document.createElement('div');
+    for (let i = 0; i < this.users.length; i++) {
+      if (this.users[i] === 'unknown') {
+        continue;
+      }
+      // Create a new block every 4 faces
+      if (i > 0 && i % 4 === 0) {
+        wrapper.appendChild(currentBlock);
+        currentBlock = document.createElement('div');
+      }
+      const image = document.createElement('img');
+      image.src = this.config.dataset + this.users[i] + '/profile.jpg';
+      currentBlock.appendChild(image);
+    }
+    wrapper.appendChild(currentBlock);
+    return wrapper;
   },
 
   // Define required translations.
@@ -115,6 +140,7 @@ Module.register('MMM-Face-Reco-DNN', {
         message: this.translate('message').replace('%person', person),
         title: this.translate('title'),
       });
+      this.updateDom();
     }
   },
 
@@ -151,6 +177,7 @@ Module.register('MMM-Face-Reco-DNN', {
           );
         });
     }
+    this.updateDom();
   },
 
   socketNotificationReceived: function(notification, payload) {
@@ -160,7 +187,7 @@ Module.register('MMM-Face-Reco-DNN', {
     // somebody has logged in
     if (payload.action === 'login') {
       for (user of payload.users) {
-        if (user != null) {
+        if (user && !this.users.includes(user)) {
           this.users.push(user);
           this.login_user(user);
 
