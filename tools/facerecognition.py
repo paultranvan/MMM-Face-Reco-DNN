@@ -36,6 +36,11 @@ def signalHandler(signal, frame):
 	global closeSafe
 	closeSafe = True
 
+def load_caffe_models(): 
+	age_net = cv2.dnn.readNetFromCaffe('./models/deploy_age.prototxt', './models/age_net.caffemodel')
+	gender_net = cv2.dnn.readNetFromCaffe('./models/deploy_gender.prototxt', './models/gender_net.caffemodel')
+	return(age_net, gender_net)
+
 signal.signal(signal.SIGINT, signalHandler)
 closeSafe = False
 
@@ -96,12 +101,18 @@ if args["extendDataset"] is True:
 # start the FPS counter
 fps = FPS().start()
 
+MODEL_MEAN_VALUES = (78.4263377603, 87.7689143744, 114.895847746)
+age_net, gender_net = load_caffe_models()
+age_list = ['(0, 2)', '(4, 6)', '(8, 12)', '(15, 20)', '(25, 32)', '(38, 43)', '(48, 53)', '(60, 100)']
+gender_list = ['Male', 'Female']
+
 # loop over frames from the video file stream
 while True:
 	# grab the frame from the threaded video stream and resize it
 	# to 500px (to speedup processing)
 	originalFrame = vs.read()
 	frame = imutils.resize(originalFrame, width=500)
+
 
 	if args["method"] == "dnn":
 		# load the input image and convert it from BGR (OpenCV ordering)
@@ -117,10 +128,30 @@ while True:
 		gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 		rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
+		     
+		face_cascade = cv2.CascadeClassifier('tools/haarcascade_frontalface_default.xml')
+		rects = face_cascade.detectMultiScale(gray, 1.1, 5)
 		# detect faces in the grayscale frame
-		rects = detector.detectMultiScale(gray, scaleFactor=1.1,
-			minNeighbors=5, minSize=(30, 30),
-			flags=cv2.CASCADE_SCALE_IMAGE)
+		# rects = detector.detectMultiScale(gray, scaleFactor=1.1,
+		# 	minNeighbors=5, minSize=(30, 30),
+		# 	flags=cv2.CASCADE_SCALE_IMAGE)
+
+		# for (x, y, w, h )in rects:
+		# 	cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 255, 0), 2)
+		# 	#Get Face 
+		# 	face_img = frame[y:y+h, h:h+w].copy()
+		# 	blob = cv2.dnn.blobFromImage(face_img, 1, (227, 227), MODEL_MEAN_VALUES, swapRB=False)
+
+		# 	#Predict Gender
+		# 	gender_net.setInput(blob)
+		# 	gender_preds = gender_net.forward()
+		# 	gender = gender_list[gender_preds[0].argmax()]
+		# 	print("Gender : " + gender)
+		# 	#Predict Age
+		# 	age_net.setInput(blob)
+		# 	age_preds = age_net.forward()
+		# 	age = age_list[age_preds[0].argmax()]
+		# 	print("Age Range: " + age)
 
 		# OpenCV returns bounding box coordinates in (x, y, w, h) order
 		# but we need them in (top, right, bottom, left) order, so we
@@ -148,6 +179,7 @@ while True:
 
 		# update the list of names
 		names.append(name)
+
 
 	# loop over the recognized faces
 	for ((top, right, bottom, left), name) in zip(boxes, names):
