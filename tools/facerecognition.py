@@ -14,6 +14,7 @@ import json
 import sys
 import signal
 import os
+import numpy as np
 
 # To properly pass JSON.stringify()ed bool command line parameters, e.g. "--extendDataset"
 # See: https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
@@ -46,7 +47,7 @@ ap.add_argument("-e", "--encodings", type=str, required=False, default="encoding
 	help="path to serialized db of facial encodings")
 ap.add_argument("-p", "--usePiCamera", type=int, required=False, default=1,
 	help="Is using picamera or builtin/usb cam")
-ap.add_argument("-s", "--source", type=str, required=False, default=0,
+ap.add_argument("-s", "--source", required=False, default=0,
 	help="Use 0 for /dev/video0 or 'http://link.to/stream'")
 ap.add_argument("-r", "--rotateCamera", type=int, required=False, default=0,
 	help="rotate camera")
@@ -62,6 +63,8 @@ ap.add_argument("-eds", "--extendDataset", type=str2bool, required=False, defaul
 	help="Extend Dataset with unknown pictures")
 ap.add_argument("-ds", "--dataset", required=False, default="../dataset/",
 	help="path to input directory of faces + images")
+ap.add_argument("-t", "--tolerance", type=float, required=False, default=0.6,
+	help="How much distance between faces to consider it a match. Lower is more strict.")
 args = vars(ap.parse_args())
 
 # load the known faces and embeddings along with OpenCV's Haar
@@ -73,10 +76,15 @@ detector = cv2.CascadeClassifier(args["cascade"])
 # initialize the video stream and allow the camera sensor to warm up
 printjson("status", "starting video stream...")
 
+if args["source"].isdigit():
+    src = int(args["source"])
+else:
+    src = args["source"]
+
 if args["usePiCamera"] >= 1:
 	vs = VideoStream(usePiCamera=True, rotation=args["rotateCamera"]).start()
 else:
-	vs = VideoStream(src=args["source"]).start()
+	vs = VideoStream(src=src).start()
 time.sleep(2.0)
 
 # variable for prev names
@@ -89,6 +97,8 @@ if args["extendDataset"] is True:
 			os.stat(unknownPath)
 	except:
 			os.mkdir(unknownPath)
+
+tolerance = float(args["tolerance"])
 
 # start the FPS counter
 fps = FPS().start()
@@ -127,33 +137,22 @@ while True:
 	# compute the facial embeddings for each face bounding box
 	encodings = face_recognition.face_encodings(rgb, boxes)
 	names = []
+	minDistance = 0.0
 
 	# loop over the facial embeddings
 	for encoding in encodings:
-		# attempt to match each face in the input image to our known
-		# encodings
-		matches = face_recognition.compare_faces(data["encodings"],
-			encoding)
-		name = "unknown"
+		# compute distances between this encoding and the faces in dataset
+		distances = face_recognition.face_distance(data["encodings"], encoding)
 
-		# check to see if we have found a match
-		if True in matches:
-			# find the indexes of all matched faces then initialize a
-			# dictionary to count the total number of times each face
-			# was matched
-			matchedIdxs = [i for (i, b) in enumerate(matches) if b]
-			counts = {}
+		# the smallest distance is the closest to the encoding
+		minDistance = min(distances)
 
-			# loop over the matched indexes and maintain a count for
-			# each recognized face face
-			for i in matchedIdxs:
-				name = data["names"][i]
-				counts[name] = counts.get(name, 0) + 1
-
-			# determine the recognized face with the largest number
-			# of votes (note: in the event of an unlikely tie Python
-			# will select first entry in the dictionary)
-			name = max(counts, key=counts.get)
+		# save the name if the distance is below the tolerance
+		if minDistance < tolerance:
+			idx = np.where(distances == minDistance)[0][0]
+			name = data["names"][idx]
+		else:
+			name = "unknown"
 
 		# update the list of names
 		names.append(name)
@@ -164,7 +163,8 @@ while True:
 		cv2.rectangle(frame, (left, top), (right, bottom),
 			(0, 255, 0), 2)
 		y = top - 15 if top - 15 > 15 else top + 15
-		cv2.putText(frame, name, (left, y), cv2.FONT_HERSHEY_SIMPLEX,
+		txt = name + " (" + "{:.2f}".format(minDistance) + ")"
+		cv2.putText(frame, txt, (left, y), cv2.FONT_HERSHEY_SIMPLEX,
 			0.75, (0, 255, 0), 2)
 
 	# display the image to our screen
